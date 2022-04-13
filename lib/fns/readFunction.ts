@@ -4,5 +4,6 @@ import { Notes } from './notesTable';
 
 export const handler = async (): Promise<APIGatewayProxyResultV2> => {
   const notes = await Notes.find({ pk: 'note' }, { limit: 10, reverse: true });
+  console.log('test')
   return { body: JSON.stringify(notes), statusCode: 200 };
 };
