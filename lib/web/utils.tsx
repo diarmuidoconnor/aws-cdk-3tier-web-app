@@ -7,7 +7,7 @@ const getUrl = async () => {
     return url;
   }
   const response = await fetch('./config.json');
-  url = `${(await response.json())['CdkThreeTierServerlessStack.HttpApiUrl']}/notes`;
+  url = `${(await response.json()).CdkThreeTierServerlessStack.HttpApiUrl}/notes`;
   return url;
 };
 
