@@ -1,8 +1,16 @@
-import type { APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { APIGatewayProxyResultV2 } from "aws-lambda";
+const AWS = require("aws-sdk");
 
-import { Notes } from './notesTable';
+const documentClient = new AWS.DynamoDB.DocumentClient();
 
 export const handler = async (): Promise<APIGatewayProxyResultV2> => {
-  const notes = await Notes.find({ pk: 'note' }, { limit: 10, reverse: true });
-  return { body: JSON.stringify(notes), statusCode: 200 };
+  const params = {
+    TableName: process.env.DatabaseTable,
+  };
+  try {
+    const data = await documentClient.scan(params).promise();
+    return JSON.stringify(data);
+  } catch (err) {
+    return JSON.stringify(err);
+  }
 };
