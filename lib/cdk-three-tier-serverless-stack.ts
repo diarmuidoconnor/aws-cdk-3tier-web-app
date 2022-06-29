@@ -1,4 +1,4 @@
-import { RemovalPolicy, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { RemovalPolicy,aws_iam, Duration, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Architecture } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -10,6 +10,10 @@ import {
   HttpMethod,
 } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+// import * as iam from 'aws-cdk-lib/aws-iam';
+// import * as lambda from 'aws-cdk-lib/aws-lambda';
+
 export class CdkThreeTierServerlessStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -22,12 +26,25 @@ export class CdkThreeTierServerlessStack extends Stack {
       tableName: 'NotesTable',
     });
 
+    const queue = new sqs.Queue(this, 'MySqsQueue');
+
+    // const lambdaRole = new aws_iam.Role(this, 'QueueConsumerFunctionRole', {
+    //   assumedBy: new aws_iam.ServicePrincipal('lambda.amazonaws.com'),
+    //   managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaSQSQueueExecutionRole'), 
+    //                     aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')]
+    // });
+
     const readFunction = new NodejsFunction(this, 'ReadNotesFn', {
       architecture: Architecture.ARM_64,
+      // runtime: lambda.Runtime.NODEJS_12_X,
+      // handler: 'app.handler',
+      timeout: Duration.seconds(3),
+      memorySize: 128,
       entry: `${__dirname}/fns/readFunction.ts`,
       environment: {
         DatabaseTable: table.tableName
       },
+      // role: lambdaRole,
       logRetention: RetentionDays.ONE_WEEK,
     });
 
@@ -35,13 +52,21 @@ export class CdkThreeTierServerlessStack extends Stack {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/writeFunction.ts`,
       environment: {
-        DatabaseTable: table.tableName
+        DatabaseTable: table.tableName,
+        SQSqueueName: queue.queueUrl
       },
       logRetention: RetentionDays.ONE_WEEK,
     });
 
-    table.grantReadData(readFunction);
+    queue.grantSendMessages(writeFunction)
 
+    // writeFunction.addToRolePolicy(new aws_iam.PolicyStatement({
+    //   effect: aws_iam.Effect.ALLOW,
+    //   resources: [queue.queueArn],
+    //   actions: ["*"],
+    // }))   
+     
+    table.grantReadData(readFunction);
     table.grantWriteData(writeFunction);
 
     const api = new HttpApi(this, 'NotesApi', {

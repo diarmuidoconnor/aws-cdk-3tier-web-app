@@ -1,3 +1,4 @@
+import { JsonFileLogDriver } from "aws-cdk-lib/aws-ecs";
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,
@@ -7,6 +8,7 @@ const AWS = require("aws-sdk");
 const moment = require("moment");
 
 const documentClient = new AWS.DynamoDB.DocumentClient();
+const sqs = new AWS.SQS({ apiVersion: "2012-11-05" });
 
 interface Festival {
   name: string;
@@ -38,6 +40,13 @@ export const handler = async (
         body: JSON.stringify(err),
       };
     }
+    const queueParams = {
+      MessageBody: JSON.stringify(festival),
+      QueueUrl: process.env.SQSqueueName
+    }
+    
+    // Send to SQS
+    const result = await sqs.sendMessage(queueParams).promise()
     return {
       statusCode: 200,
       body: "OK!",
