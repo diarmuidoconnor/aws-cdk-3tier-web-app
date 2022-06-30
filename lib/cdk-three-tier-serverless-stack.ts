@@ -1,4 +1,4 @@
-import { RemovalPolicy,aws_iam, Duration, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { RemovalPolicy, Duration, Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Architecture } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -13,11 +13,9 @@ import {
 } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-// import * as iam from 'aws-cdk-lib/aws-iam';
-// import * as lambda from 'aws-cdk-lib/aws-lambda';
-
+import { CDKContext } from '../shared/types';
 export class CdkThreeTierServerlessStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: StackProps, context: CDKContext ) {
     super(scope, id, props);
 
     const table = new Table(this, 'NotesTable', {

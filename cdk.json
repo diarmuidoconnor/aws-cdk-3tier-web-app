@@ -28,6 +28,22 @@
     "@aws-cdk/core:target-partitions": [
       "aws",
       "aws-cn"
+    ],
+    "globals": {
+      "accountNumber": "517039770760", 
+      "region": "eu-west-1",
+      "appName": "Festivals" 
+    },
+    "environments": [
+      {
+        "emvironment": "develop",
+        "branchName": "develop",
+      } ,
+      {
+        "emvironment": "prod",
+        "branchName": "prod",
+      } 
+
     ]
   }
 }

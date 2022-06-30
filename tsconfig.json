@@ -19,6 +19,10 @@
     "inlineSources": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
+    "baseUrl": ".",
+    "paths": {
+      "/opt/*": ["shared/*"]
+    },
     "typeRoots": [
       "./node_modules/@types"
     ]

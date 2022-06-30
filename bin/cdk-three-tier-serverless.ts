@@ -1,22 +1,50 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { CdkThreeTierServerlessStack } from '../lib/cdk-three-tier-serverless-stack';
+import { CdkThreeTierServerlessStack as CDKStack } from '../lib/cdk-three-tier-serverless-stack';
+import { CDKContext } from '../shared/types';
+const gitBranch = require('git-branch');
 
-const app = new cdk.App();
-new CdkThreeTierServerlessStack(app, 'Cdk3TierSlStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
-    env: { account: "517039770760", region: "eu-west-1" },
+// Get CDK Context based on git branch
+export const getContext = async (app: cdk.App): Promise<CDKContext> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const currentBranch = await gitBranch();
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+      const environment = app.node.tryGetContext('environments').find((e: any) => e.branchName === currentBranch);
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+      const globals = app.node.tryGetContext('globals');
 
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
-});
+      return resolve({ ...globals, ...environment });
+    } catch (error) {
+      console.error(error);
+      return reject();
+    }
+  });
+};
+
+// Create Stacks
+const createStacks = async () => {
+  try {
+    const app = new cdk.App();
+    const context = await getContext(app);
+
+    const tags: any = {
+      Environment: context.environment,
+    };
+
+    const stackProps: cdk.StackProps = {
+      env: {
+        region: context.region,
+        account: context.accountNumber,
+      },
+      tags,
+    };
+
+    const stack = new CDKStack (app, `${context.appName}-cdk-base-stack-${context.environment}`, stackProps, context);
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+createStacks();

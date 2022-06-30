@@ -29,6 +29,7 @@
     "aws-cdk-lib": "2.20.0",
     "constructs": "^10.0.0",
     "dynamodb-onetable": "^2.3.4",
+    "git-branch": "^2.0.1",
     "moment": "^2.29.1",
     "source-map-support": "^0.5.16"
   }
