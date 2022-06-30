@@ -36,11 +36,11 @@
     },
     "environments": [
       {
-        "emvironment": "develop",
+        "environment": "develop",
         "branchName": "develop"
       },
       {
-        "emvironment": "prod",
+        "environment": "prod",
         "branchName": "prod"
       } 
     ]
