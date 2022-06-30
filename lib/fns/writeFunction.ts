@@ -10,7 +10,7 @@ const moment = require("moment");
 const documentClient = new AWS.DynamoDB.DocumentClient();
 const sqs = new AWS.SQS({ apiVersion: "2012-11-05" });
 
-interface Festival {
+export interface Festival {
   name: string;
   review: string;
 }
@@ -42,7 +42,7 @@ export const handler = async (
     }
     const queueParams = {
       MessageBody: JSON.stringify(festival),
-      QueueUrl: process.env.SQSqueueName
+      QueueUrl: process.env.SQSqueueURL
     }
     
     // Send to SQS

@@ -2,6 +2,8 @@ import { RemovalPolicy,aws_iam, Duration, Stack, StackProps, CfnOutput } from 'a
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Architecture } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import {
@@ -28,6 +30,8 @@ export class CdkThreeTierServerlessStack extends Stack {
 
     const queue = new sqs.Queue(this, 'MySqsQueue');
 
+    const eventSource = new SqsEventSource(queue)
+
     // const lambdaRole = new aws_iam.Role(this, 'QueueConsumerFunctionRole', {
     //   assumedBy: new aws_iam.ServicePrincipal('lambda.amazonaws.com'),
     //   managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaSQSQueueExecutionRole'), 
@@ -48,18 +52,30 @@ export class CdkThreeTierServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    const readQueueFunction = new NodejsFunction(this, 'ReadQueueFn', {
+      architecture: Architecture.ARM_64,
+      // runtime: lambda.Runtime.NODEJS_12_X,
+      // handler: 'app.handler',
+      timeout: Duration.seconds(3),
+      memorySize: 128,
+      entry: `${__dirname}/fns/readQueueFunction.ts`,
+      logRetention: RetentionDays.ONE_WEEK,
+    });
+
     const writeFunction = new NodejsFunction(this, 'WriteNoteFn', {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/writeFunction.ts`,
       environment: {
         DatabaseTable: table.tableName,
-        SQSqueueName: queue.queueUrl
+        SQSqueueURL: queue.queueUrl
       },
       logRetention: RetentionDays.ONE_WEEK,
     });
 
     queue.grantSendMessages(writeFunction)
+    queue.grantConsumeMessages(readQueueFunction)
 
+    readQueueFunction.addEventSource(eventSource)
     // writeFunction.addToRolePolicy(new aws_iam.PolicyStatement({
     //   effect: aws_iam.Effect.ALLOW,
     //   resources: [queue.queueArn],
