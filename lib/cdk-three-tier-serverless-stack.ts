@@ -14,6 +14,8 @@ import {
 import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { CDKContext } from '../shared/types';
+import * as iam from 'aws-cdk-lib/aws-iam';
+
 export class CdkThreeTierServerlessStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps, context: CDKContext ) {
     super(scope, id, props);
@@ -74,11 +76,11 @@ export class CdkThreeTierServerlessStack extends Stack {
     queue.grantConsumeMessages(readQueueFunction)
 
     readQueueFunction.addEventSource(eventSource)
-    // writeFunction.addToRolePolicy(new aws_iam.PolicyStatement({
-    //   effect: aws_iam.Effect.ALLOW,
-    //   resources: [queue.queueArn],
-    //   actions: ["*"],
-    // }))   
+    readQueueFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      resources: ["*"],
+      actions: ["translate:TranslateText"],
+    }))   
      
     table.grantReadData(readFunction);
     table.grantWriteData(writeFunction);
