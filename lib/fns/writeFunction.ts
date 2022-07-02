@@ -1,4 +1,3 @@
-import { JsonFileLogDriver } from "aws-cdk-lib/aws-ecs";
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,

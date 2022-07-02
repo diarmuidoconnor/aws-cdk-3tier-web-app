@@ -1,4 +1,4 @@
-import { SQSHandler, SQSRecord } from "aws-lambda";
+import { SQSHandler } from "aws-lambda";
 import {Festival } from './writeFunction';
 const AWS = require("aws-sdk");
 

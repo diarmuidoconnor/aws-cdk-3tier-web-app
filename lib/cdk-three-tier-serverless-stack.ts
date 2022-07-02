@@ -15,6 +15,7 @@ import { HttpLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-al
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { CDKContext } from '../shared/types';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3'
 
 export class CdkThreeTierServerlessStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps, context: CDKContext ) {
@@ -29,6 +30,11 @@ export class CdkThreeTierServerlessStack extends Stack {
     });
 
     const queue = new sqs.Queue(this, 'MySqsQueue');
+
+    const imagesBucket = new s3.Bucket(this,'images', {
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    })
 
     const eventSource = new SqsEventSource(queue)
 
@@ -62,6 +68,20 @@ export class CdkThreeTierServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    const writeImageFunction = new NodejsFunction(this, 'WriteImageFn', {
+      architecture: Architecture.ARM_64,
+      // runtime: lambda.Runtime.NODEJS_12_X,
+      // handler: 'app.handler',
+      timeout: Duration.seconds(3),
+      memorySize: 128,
+      entry: `${__dirname}/fns/writeImageFunction.ts`,
+      environment: {
+        bucketName: imagesBucket.bucketName
+      },
+      // role: lambdaRole,
+      logRetention: RetentionDays.ONE_WEEK,
+    });    
+
     const writeFunction = new NodejsFunction(this, 'WriteNoteFn', {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/writeFunction.ts`,
@@ -81,7 +101,9 @@ export class CdkThreeTierServerlessStack extends Stack {
       resources: ["*"],
       actions: ["translate:TranslateText"],
     }))   
-     
+
+    imagesBucket.grantWrite(writeImageFunction)
+
     table.grantReadData(readFunction);
     table.grantWriteData(writeFunction);
 
@@ -103,6 +125,11 @@ export class CdkThreeTierServerlessStack extends Stack {
       writeFunction
     );
 
+    const writeImageIntegration = new HttpLambdaIntegration(
+      'WriteImageIntegration',
+      writeImageFunction
+    );
+
     api.addRoutes({
       integration: readIntegration,
       methods: [HttpMethod.GET],
@@ -114,6 +141,13 @@ export class CdkThreeTierServerlessStack extends Stack {
       methods: [HttpMethod.POST],
       path: '/notes',
     });
+
+    api.addRoutes({
+      integration: writeImageIntegration,
+      methods: [HttpMethod.POST],
+      path: '/images',
+    });
+
     new CfnOutput(this, 'HttpApiUrl', { value: api.apiEndpoint });
 
   }
