@@ -41,7 +41,7 @@ const createStacks = async () => {
       tags,
     };
 
-    const stack = new CDKStack (app, `${context.appName}-cdk-base-stack-${context.environment}`, stackProps, context);
+    const stack = new CDKStack (app, `${context.appName}-stack-${context.environment}`, stackProps, context);
   } catch (error) {
     console.error(error);
   }

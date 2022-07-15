@@ -16,6 +16,8 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { CDKContext } from '../shared/types';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3'
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 
 export class CdkThreeTierServerlessStack extends Stack {
   constructor(scope: Construct, id: string, props: StackProps, context: CDKContext ) {
@@ -34,7 +36,21 @@ export class CdkThreeTierServerlessStack extends Stack {
     const imagesBucket = new s3.Bucket(this,'images', {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
-    })
+    }) 
+
+    const thumbnailImagesBucket = new s3.Bucket(this,'thumbnail-images', {
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    }) 
+
+    const sharpLayer = new lambda.LayerVersion(this, 'sharp-layer', {
+      compatibleRuntimes: [
+        lambda.Runtime.NODEJS_12_X,
+        lambda.Runtime.NODEJS_14_X,
+      ],
+      code: lambda.Code.fromAsset('layers/sharp-utils'),
+      description: 'Uses a 3rd party library called sharp',
+    });    
 
     const eventSource = new SqsEventSource(queue)
 
@@ -82,6 +98,27 @@ export class CdkThreeTierServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });    
 
+    const resizeImageFunction = new NodejsFunction(this, 'ResizeImageFn', {
+      // architecture: Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_14_X,
+      // handler: 'app.handler',
+      timeout: Duration.seconds(5),
+      memorySize: 128,
+      entry: `${__dirname}/fns/imageResizeFunction.ts`,
+      environment: {
+        bucketName: thumbnailImagesBucket.bucketName
+      },
+      // role: lambdaRole,
+      logRetention: RetentionDays.ONE_WEEK,
+      bundling: {
+        minify: false,
+        // 👇 don't bundle `yup` layer
+        // layers are already available in the lambda env
+        externalModules: ['aws-sdk', 'sharp'],
+      },
+      layers: [sharpLayer],
+    });   
+
     const writeFunction = new NodejsFunction(this, 'WriteNoteFn', {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/writeFunction.ts`,
@@ -102,8 +139,15 @@ export class CdkThreeTierServerlessStack extends Stack {
       actions: ["translate:TranslateText"],
     }))   
 
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(resizeImageFunction),
+      // 👇 only invoke lambda if object matches the filter
+      {prefix: 'images/', suffix: '.png'},
+    );       
     imagesBucket.grantWrite(writeImageFunction)
-
+    imagesBucket.grantRead(resizeImageFunction)
+    thumbnailImagesBucket.grantWrite(resizeImageFunction)
     table.grantReadData(readFunction);
     table.grantWriteData(writeFunction);
 

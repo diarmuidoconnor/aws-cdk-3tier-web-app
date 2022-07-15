@@ -8,6 +8,7 @@ import type {
   
   const s3 = new AWS.S3()
   // Base64Image encoding https://elmah.io/tools/base64-image-encoder/
+ 
   export const handler = async (
     event: APIGatewayProxyEventV2
   ): Promise<APIGatewayProxyResultV2> => {
@@ -24,9 +25,10 @@ import type {
             const decodedFile = Buffer.from(base64File.replace(/^data:image\/\w+;base64,/, ""), "base64");
             const params = {
                 Bucket: process.env.bucketName,
-                Key: `images/${new Date().toISOString()}.jpeg`,
+                // Key: `images/${new Date().toISOString()}.jpeg`,
+                Key: `images/${parsedBody.image.name }.png`,
                 Body: decodedFile,
-                ContentType: "image/jpeg",
+                ContentType: "image/png",
             };
             const uploadResult = await s3.upload(params).promise();
             response.body = JSON.stringify({ message: "Successfully uploaded file to S3", uploadResult });
