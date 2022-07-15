@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import 'source-map-support/register';
-import * as cdk from 'aws-cdk-lib';
-import { CdkThreeTierServerlessStack as CDKStack } from '../lib/cdk-three-tier-serverless-stack';
-import { CDKContext } from '../shared/types';
-const gitBranch = require('git-branch');
+import "source-map-support/register";
+import * as cdk from "aws-cdk-lib";
+import { EventDrivenServerlessStack as CDKStack } from "../lib/event-driven-serverless";
+import { CDKContext } from "../shared/types";
+const gitBranch = require("git-branch");
 
 // Get CDK Context based on git branch
 export const getContext = async (app: cdk.App): Promise<CDKContext> => {
@@ -11,9 +11,11 @@ export const getContext = async (app: cdk.App): Promise<CDKContext> => {
     try {
       const currentBranch = await gitBranch();
 
-      const environment = app.node.tryGetContext('environments').find((e: any) => e.branchName === currentBranch);
+      const environment = app.node
+        .tryGetContext("environments")
+        .find((e: any) => e.branchName === currentBranch);
 
-      const globals = app.node.tryGetContext('globals');
+      const globals = app.node.tryGetContext("globals");
 
       return resolve({ ...globals, ...environment });
     } catch (error) {
@@ -41,7 +43,12 @@ const createStacks = async () => {
       tags,
     };
 
-    const stack = new CDKStack (app, `${context.appName}-stack-${context.environment}`, stackProps, context);
+    const stack = new CDKStack(
+      app,
+      `${context.appName}-stack-${context.environment}`,
+      stackProps,
+      context
+    );
   } catch (error) {
     console.error(error);
   }

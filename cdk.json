@@ -1,5 +1,5 @@
 {
-  "app": "npx ts-node --prefer-ts-exts bin/cdk-three-tier-serverless.ts",
+  "app": "npx ts-node --prefer-ts-exts bin/event-driven-serverless.ts ",
   "watch": {
     "include": [
       "**"
