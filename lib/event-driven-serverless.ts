@@ -152,6 +152,14 @@ export class EventDrivenServerlessStack extends Stack {
       })
     );
 
+    writeFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        resources: ["*"],
+        actions: ["comprehend:*"],
+      })
+    );
+
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(resizeImageFunction),

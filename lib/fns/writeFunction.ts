@@ -4,10 +4,12 @@ import type {
 } from "aws-lambda";
 
 const AWS = require("aws-sdk");
+
 const moment = require("moment");
 
 const documentClient = new AWS.DynamoDB.DocumentClient();
 const sqs = new AWS.SQS({ apiVersion: "2012-11-05" });
+const comprehend = new AWS.Comprehend()
 
 export interface Festival {
   name: string;
@@ -20,7 +22,7 @@ export const handler = async (
   if (event.body) {
     const festival = JSON.parse(event.body) as Festival;
 
-    let params = {
+    let dbParams = {
       TableName: process.env.DatabaseTable,
       Item: {
         ID: Math.floor(Math.random() * Math.floor(10000000)).toString(),
@@ -30,8 +32,24 @@ export const handler = async (
         review: festival.review,
       },
     };
+    let comprehendParams = {
+      LanguageCode: null,
+      Text: festival.review
+    };
+    // console.log('sentimant params ', JSON.stringify(,null,3))
     try {
-      let data = await documentClient.put(params).promise();
+      let dominantLanguage : any = await comprehend.detectDominantLanguage(comprehendParams).promise()
+      comprehendParams.LanguageCode = dominantLanguage.Languages[0].LanguageCode
+           
+      let sentiment = await comprehend.detectSentiment(comprehendParams).promise()
+      
+      console.log(' language ', JSON.stringify(sentiment, null,3) )
+
+      // , function(err : any, data : any) {
+      //   if (err) console.log(err, err.stack); // an error occurred
+      //   else     console.log(data);           // successful response
+      // });
+      let data = await documentClient.put(dbParams).promise();
     } catch (err) {
       console.log(err);
       return {
@@ -45,7 +63,7 @@ export const handler = async (
     }
     
     // Send to SQS
-    const result = await sqs.sendMessage(queueParams).promise()
+    // const result = await sqs.sendMessage(queueParams).promise()
     return {
       statusCode: 200,
       body: "OK!",
