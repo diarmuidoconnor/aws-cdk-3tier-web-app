@@ -5,10 +5,18 @@ import {
   StackProps,
   CfnOutput,
 } from "aws-cdk-lib";
-import { AttributeType, BillingMode, Table } from "aws-cdk-lib/aws-dynamodb";
-import { Architecture } from "aws-cdk-lib/aws-lambda";
+import {
+  AttributeType,
+  BillingMode,
+  Table,
+  StreamViewType,
+} from "aws-cdk-lib/aws-dynamodb";
+import { Architecture, StartingPosition } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
-import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import {
+  SqsEventSource,
+  DynamoEventSource,
+} from "aws-cdk-lib/aws-lambda-event-sources";
 
 import { RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
@@ -39,7 +47,8 @@ export class EventDrivenServerlessStack extends Stack {
       partitionKey: { name: "ID", type: AttributeType.STRING },
       removalPolicy: RemovalPolicy.DESTROY,
       sortKey: { name: "created", type: AttributeType.STRING },
-      tableName: "NotesTable",
+      tableName: "FestivalsTable",
+      stream: StreamViewType.NEW_IMAGE,
     });
 
     const queue = new sqs.Queue(this, "MySqsQueue");
@@ -85,6 +94,7 @@ export class EventDrivenServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    // Translate review report retrieved from the SQS.
     const readQueueFunction = new NodejsFunction(this, "ReadQueueFn", {
       architecture: Architecture.ARM_64,
       // runtime: lambda.Runtime.NODEJS_12_X,
@@ -130,6 +140,7 @@ export class EventDrivenServerlessStack extends Stack {
       layers: [sharpLayer],
     });
 
+    // Save review to DDB and push it to SQS
     const writeFunction = new NodejsFunction(this, "WriteNoteFn", {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/writeFunction.ts`,
@@ -140,10 +151,26 @@ export class EventDrivenServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    // Triggered when record added to DDB
+    const readDDBStreamFunction = new NodejsFunction(this, "ReadDDBStreamFn", {
+      architecture: Architecture.ARM_64,
+      entry: `${__dirname}/fns/readDDBStreamFunction.ts`,
+      environment: {
+        DatabaseTable: table.tableName,
+      },
+      logRetention: RetentionDays.ONE_WEEK,
+    });
+
     queue.grantSendMessages(writeFunction);
     queue.grantConsumeMessages(readQueueFunction);
 
     readQueueFunction.addEventSource(eventSource);
+    readDDBStreamFunction.addEventSource(
+      new DynamoEventSource(table, {
+        startingPosition: StartingPosition.LATEST,
+      })
+    );
+
     readQueueFunction.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -152,6 +179,14 @@ export class EventDrivenServerlessStack extends Stack {
       })
     );
 
+    readDDBStreamFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        resources: ["*"],
+        actions: ["translate:TranslateText"],
+      })
+    );
+    
     writeFunction.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -166,6 +201,7 @@ export class EventDrivenServerlessStack extends Stack {
       // 👇 only invoke lambda if object matches the filter
       { prefix: "images/", suffix: ".png" }
     );
+
     imagesBucket.grantWrite(writeImageFunction);
     imagesBucket.grantRead(resizeImageFunction);
     thumbnailImagesBucket.grantWrite(resizeImageFunction);
