@@ -27,7 +27,7 @@ import {
 } from "@aws-cdk/aws-apigatewayv2-alpha";
 import { HttpLambdaIntegration } from "@aws-cdk/aws-apigatewayv2-integrations-alpha";
 import * as sqs from "aws-cdk-lib/aws-sqs";
-import { CDKContext } from "../shared/types";
+import { CDKContext, LambdaStackProps } from "../shared/types";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
@@ -37,12 +37,12 @@ export class EventDrivenServerlessStack extends Stack {
   constructor(
     scope: Construct,
     id: string,
-    props: StackProps,
+    props: LambdaStackProps,
     context: CDKContext
   ) {
     super(scope, id, props);
 
-    const table = new Table(this, "NotesTable", {
+    const festivalsTable = new Table(this, "NotesTable", {
       billingMode: BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "ID", type: AttributeType.STRING },
       removalPolicy: RemovalPolicy.DESTROY,
@@ -72,46 +72,40 @@ export class EventDrivenServerlessStack extends Stack {
       description: "Uses a 3rd party library called sharp",
     });
 
-    const eventSource = new SqsEventSource(queue);
+    const newImageEventSource = new SqsEventSource(queue);
 
-    // const lambdaRole = new aws_iam.Role(this, 'QueueConsumerFunctionRole', {
-    //   assumedBy: new aws_iam.ServicePrincipal('lambda.amazonaws.com'),
-    //   managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaSQSQueueExecutionRole'),
-    //                     aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')]
-    // });
-
-    const readFunction = new NodejsFunction(this, "ReadNotesFn", {
+    const readAllFestivalsFn = new NodejsFunction(this, "ReadNotesFn", {
       architecture: Architecture.ARM_64,
       // runtime: lambda.Runtime.NODEJS_12_X,
       // handler: 'app.handler',
       timeout: Duration.seconds(3),
       memorySize: 128,
-      entry: `${__dirname}/fns/readFunction.ts`,
+      entry: `${__dirname}/fns/readAllFestivals.ts`,
       environment: {
-        DatabaseTable: table.tableName,
+        DatabaseTable: festivalsTable.tableName,
       },
       // role: lambdaRole,
       logRetention: RetentionDays.ONE_WEEK,
     });
 
     // Translate review report retrieved from the SQS.
-    const readQueueFunction = new NodejsFunction(this, "ReadQueueFn", {
+    const translateReviewsFn = new NodejsFunction(this, "ReadQueueFn", {
       architecture: Architecture.ARM_64,
       // runtime: lambda.Runtime.NODEJS_12_X,
       // handler: 'app.handler',
       timeout: Duration.seconds(3),
       memorySize: 128,
-      entry: `${__dirname}/fns/readQueueFunction.ts`,
+      entry: `${__dirname}/fns/translateReviews.ts`,
       logRetention: RetentionDays.ONE_WEEK,
     });
 
-    const writeImageFunction = new NodejsFunction(this, "WriteImageFn", {
+    const saveImageFn = new NodejsFunction(this, "WriteImageFn", {
       architecture: Architecture.ARM_64,
       // runtime: lambda.Runtime.NODEJS_12_X,
       // handler: 'app.handler',
       timeout: Duration.seconds(3),
       memorySize: 128,
-      entry: `${__dirname}/fns/writeImageFunction.ts`,
+      entry: `${__dirname}/fns/saveImage.ts`,
       environment: {
         bucketName: imagesBucket.bucketName,
       },
@@ -145,7 +139,7 @@ export class EventDrivenServerlessStack extends Stack {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/writeFunction.ts`,
       environment: {
-        DatabaseTable: table.tableName,
+        DatabaseTable: festivalsTable.tableName,
         SQSqueueURL: queue.queueUrl,
       },
       logRetention: RetentionDays.ONE_WEEK,
@@ -156,22 +150,28 @@ export class EventDrivenServerlessStack extends Stack {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/readDDBStreamFunction.ts`,
       environment: {
-        DatabaseTable: table.tableName,
+        DatabaseTable: festivalsTable.tableName,
       },
       logRetention: RetentionDays.ONE_WEEK,
     });
 
-    queue.grantSendMessages(writeFunction);
-    queue.grantConsumeMessages(readQueueFunction);
-
-    readQueueFunction.addEventSource(eventSource);
+    translateReviewsFn.addEventSource(newImageEventSource);
     readDDBStreamFunction.addEventSource(
-      new DynamoEventSource(table, {
+      new DynamoEventSource(festivalsTable, {
         startingPosition: StartingPosition.LATEST,
       })
     );
 
-    readQueueFunction.addToRolePolicy(
+    // PERMISSIONS
+    queue.grantSendMessages(writeFunction);
+    queue.grantConsumeMessages(translateReviewsFn);
+    imagesBucket.grantWrite(saveImageFn);
+    imagesBucket.grantRead(resizeImageFunction);
+    thumbnailImagesBucket.grantWrite(resizeImageFunction);
+    festivalsTable.grantReadData(readAllFestivalsFn);
+    festivalsTable.grantWriteData(writeFunction);
+
+    translateReviewsFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -186,7 +186,7 @@ export class EventDrivenServerlessStack extends Stack {
         actions: ["translate:TranslateText"],
       })
     );
-    
+
     writeFunction.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -195,6 +195,7 @@ export class EventDrivenServerlessStack extends Stack {
       })
     );
 
+    // EVENTS
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(resizeImageFunction),
@@ -202,12 +203,7 @@ export class EventDrivenServerlessStack extends Stack {
       { prefix: "images/", suffix: ".png" }
     );
 
-    imagesBucket.grantWrite(writeImageFunction);
-    imagesBucket.grantRead(resizeImageFunction);
-    thumbnailImagesBucket.grantWrite(resizeImageFunction);
-    table.grantReadData(readFunction);
-    table.grantWriteData(writeFunction);
-
+    // API 
     const api = new HttpApi(this, "NotesApi", {
       corsPreflight: {
         allowHeaders: ["Content-Type"],
@@ -218,7 +214,7 @@ export class EventDrivenServerlessStack extends Stack {
 
     const readIntegration = new HttpLambdaIntegration(
       "ReadIntegration",
-      readFunction
+      readAllFestivalsFn
     );
 
     const writeIntegration = new HttpLambdaIntegration(
@@ -226,29 +222,35 @@ export class EventDrivenServerlessStack extends Stack {
       writeFunction
     );
 
-    const writeImageIntegration = new HttpLambdaIntegration(
-      "WriteImageIntegration",
-      writeImageFunction
+    const saveImageIntegration = new HttpLambdaIntegration(
+      "SaveImageIntegration",
+      saveImageFn
     );
 
     api.addRoutes({
       integration: readIntegration,
       methods: [HttpMethod.GET],
-      path: "/notes",
+      path: "/reviews",
     });
 
     api.addRoutes({
       integration: writeIntegration,
       methods: [HttpMethod.POST],
-      path: "/notes",
+      path: "/reviews",
     });
 
     api.addRoutes({
-      integration: writeImageIntegration,
+      integration: saveImageIntegration,
       methods: [HttpMethod.POST],
       path: "/images",
     });
 
+    // OUTPUTS
     new CfnOutput(this, "HttpApiUrl", { value: api.apiEndpoint });
   }
+  // const lambdaRole = new aws_iam.Role(this, 'QueueConsumerFunctionRole', {
+  //   assumedBy: new aws_iam.ServicePrincipal('lambda.amazonaws.com'),
+  //   managedPolicies: [aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaSQSQueueExecutionRole'),
+  //                     aws_iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')]
+  // });
 }
