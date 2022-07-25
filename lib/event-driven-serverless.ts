@@ -32,6 +32,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import { HttpLambdaAuthorizer, HttpLambdaResponseType } from '@aws-cdk/aws-apigatewayv2-authorizers-alpha';
 
 export class EventDrivenServerlessStack extends Stack {
   constructor(
@@ -155,6 +156,17 @@ export class EventDrivenServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    // Triggered when record added to DDB
+    const apiAuthorizerFn = new NodejsFunction(this, "APIAuthorizerFn", {
+      architecture: Architecture.ARM_64,
+      entry: `${__dirname}/fns/apiAuthorizer.ts`,
+      environment: {
+        DatabaseTable: festivalsTable.tableName,
+        USER_POOL_ID: props.userPool ? props.userPool.userPoolId : 'UNKNOWN',
+      },
+      logRetention: RetentionDays.ONE_WEEK,
+    });
+
     translateReviewsFn.addEventSource(newImageEventSource);
     readDDBStreamFunction.addEventSource(
       new DynamoEventSource(festivalsTable, {
@@ -204,12 +216,21 @@ export class EventDrivenServerlessStack extends Stack {
     );
 
     // API 
-    const api = new HttpApi(this, "NotesApi", {
+
+    // Define API Authorizer
+    const apiAuthorizer = new HttpLambdaAuthorizer('apiAuthorizer', apiAuthorizerFn, {
+      authorizerName: `${context.appName}-http-api-authorizer-${context.environment}`,
+      responseTypes: [HttpLambdaResponseType.SIMPLE],
+    });
+    const api = new HttpApi(this, "FestivalsApi", {
+      apiName: `${context.appName}-api-${context.environment}`,
+      description: `HTTP API Demo - ${context.environment}`,
       corsPreflight: {
-        allowHeaders: ["Content-Type"],
-        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST],
-        allowOrigins: ["*"],
+        allowHeaders: ['Authorization', 'Content-Type'],
+        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST, CorsHttpMethod.OPTIONS],
+        allowOrigins: ['*'],
       },
+      defaultAuthorizer: apiAuthorizer,
     });
 
     const readIntegration = new HttpLambdaIntegration(

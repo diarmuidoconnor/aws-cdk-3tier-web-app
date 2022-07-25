@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import "source-map-support/register";
 import * as cdk from "aws-cdk-lib";
-import { EventDrivenServerlessStack as CDKStack } from "../lib/event-driven-serverless";
-import { CDKContext } from "../shared/types";
+import { EventDrivenServerlessStack } from "../lib/event-driven-serverless";
+import { CDKContext, LambdaStackProps } from "../shared/types";
 const gitBranch = require("git-branch");
-
+import { CognitoStack } from '../lib/cognito-stack'
 // Get CDK Context based on git branch
 export const getContext = async (app: cdk.App): Promise<CDKContext> => {
   return new Promise(async (resolve, reject) => {
@@ -42,11 +42,16 @@ const createStacks = async () => {
       },
       tags,
     };
-
-    const stack = new CDKStack(
+    const cognitoStack = new CognitoStack(
+      app,
+      `${context.appName}-cognito-${context.environment}`,
+      stackProps,
+      context
+    );
+    const stack = new EventDrivenServerlessStack(
       app,
       `${context.appName}-stack-${context.environment}`,
-      stackProps,
+      { ...stackProps, userPool: cognitoStack.userPool },
       context
     );
   } catch (error) {
