@@ -187,6 +187,15 @@ export class EventDrivenServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    const addFestivalFn = new NodejsFunction(this, "AddFestivalFn", {
+      architecture: Architecture.ARM_64,
+      entry: `${__dirname}/fns/addFestival.ts`,
+      environment: {
+        DDB_TABLE: festivalsTable.tableName,
+      },
+      logRetention: RetentionDays.ONE_WEEK,
+    });    
+
     translateReviewsFn.addEventSource(newImageEventSource);
     readDDBStreamFunction.addEventSource(
       new DynamoEventSource(festivalsTable, {
@@ -203,6 +212,7 @@ export class EventDrivenServerlessStack extends Stack {
     festivalsTable.grantReadData(readAllFestivalsFn);
     festivalsTable.grantWriteData(saveReviewFn);
     festivalsTable.grantReadData(getFestivalsFn);
+    festivalsTable.grantWriteData(addFestivalFn);
 
     translateReviewsFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -273,6 +283,11 @@ export class EventDrivenServerlessStack extends Stack {
       getFestivalsFn
     );
 
+    const addFestivalIntegration = new HttpLambdaIntegration(
+      "AddFestivalIntegration",
+      addFestivalFn
+    );    
+
     const saveReviewIntegration = new HttpLambdaIntegration(
       "WriteReviewIntegration",
       saveReviewFn
@@ -294,6 +309,13 @@ export class EventDrivenServerlessStack extends Stack {
       methods: [HttpMethod.GET],
       path: "/festivals",
     });
+
+    api.addRoutes({
+      integration: addFestivalIntegration,
+      methods: [HttpMethod.POST],
+      path: "/festivals",
+    });    
+    
     api.addRoutes({
       integration: saveReviewIntegration,
       methods: [HttpMethod.POST],

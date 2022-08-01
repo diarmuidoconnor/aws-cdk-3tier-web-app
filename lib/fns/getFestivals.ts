@@ -16,7 +16,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         ? event.queryStringParameters
         : {};
 
-      //  Get DDB DocClient
+      //  Get DDB DocClient client
       const marshallOptions = {
         convertEmptyValues: true,
         removeUndefinedValues: true,
