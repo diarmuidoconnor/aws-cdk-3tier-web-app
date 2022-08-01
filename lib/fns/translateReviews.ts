@@ -1,5 +1,5 @@
 import { SQSHandler } from "aws-lambda";
-import {Festival } from './writeFunction';
+import {Festival } from './saveReview';
 const AWS = require("aws-sdk");
 
 const translate = new AWS.Translate();

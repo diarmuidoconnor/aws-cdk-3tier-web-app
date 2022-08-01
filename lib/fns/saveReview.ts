@@ -12,7 +12,9 @@ const sqs = new AWS.SQS({ apiVersion: "2012-11-05" });
 const comprehend = new AWS.Comprehend()
 
 export interface Festival {
-  name: string;
+  artist: string;
+  city: string,
+  venue: string,
   review: string;
 }
 
@@ -28,7 +30,9 @@ export const handler = async (
         ID: Math.floor(Math.random() * Math.floor(10000000)).toString(),
         created: moment().format("YYYYMMDD-hhmmss"),
         metadata: JSON.stringify(festival),
-        name: festival.name,
+        artist: festival.artist,
+        city: festival.city,
+        venue: festival.venue,
         review: festival.review,
       },
     };
@@ -38,12 +42,12 @@ export const handler = async (
     };
     // console.log('sentimant params ', JSON.stringify(,null,3))
     try {
-      let dominantLanguage : any = await comprehend.detectDominantLanguage(comprehendParams).promise()
-      comprehendParams.LanguageCode = dominantLanguage.Languages[0].LanguageCode
+      // let dominantLanguage : any = await comprehend.detectDominantLanguage(comprehendParams).promise()
+      // comprehendParams.LanguageCode = dominantLanguage.Languages[0].LanguageCode
            
-      let sentiment = await comprehend.detectSentiment(comprehendParams).promise()
+      // let sentiment = await comprehend.detectSentiment(comprehendParams).promise()
       
-      console.log(' language ', JSON.stringify(sentiment, null,3) )
+      // console.log(' language ', JSON.stringify(sentiment, null,3) )
 
       // , function(err : any, data : any) {
       //   if (err) console.log(err, err.stack); // an error occurred

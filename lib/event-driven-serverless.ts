@@ -10,6 +10,7 @@ import {
   BillingMode,
   Table,
   StreamViewType,
+  ProjectionType,
 } from "aws-cdk-lib/aws-dynamodb";
 import { Architecture, StartingPosition } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
@@ -32,7 +33,10 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import { HttpLambdaAuthorizer, HttpLambdaResponseType } from '@aws-cdk/aws-apigatewayv2-authorizers-alpha';
+import {
+  HttpLambdaAuthorizer,
+  HttpLambdaResponseType,
+} from "@aws-cdk/aws-apigatewayv2-authorizers-alpha";
 
 export class EventDrivenServerlessStack extends Stack {
   constructor(
@@ -50,6 +54,12 @@ export class EventDrivenServerlessStack extends Stack {
       sortKey: { name: "created", type: AttributeType.STRING },
       tableName: "FestivalsTable",
       stream: StreamViewType.NEW_IMAGE,
+    }); 
+    festivalsTable.addGlobalSecondaryIndex({
+      indexName: `artist-index`,
+      partitionKey: { name: "artist", type: AttributeType.STRING },
+      sortKey: { name: "city", type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
     });
 
     const queue = new sqs.Queue(this, "MySqsQueue");
@@ -136,9 +146,9 @@ export class EventDrivenServerlessStack extends Stack {
     });
 
     // Save review to DDB and push it to SQS
-    const writeFunction = new NodejsFunction(this, "WriteNoteFn", {
+    const saveReviewFn = new NodejsFunction(this, "WriteNoteFn", {
       architecture: Architecture.ARM_64,
-      entry: `${__dirname}/fns/writeFunction.ts`,
+      entry: `${__dirname}/fns/saveReview.ts`,
       environment: {
         DatabaseTable: festivalsTable.tableName,
         SQSqueueURL: queue.queueUrl,
@@ -162,7 +172,17 @@ export class EventDrivenServerlessStack extends Stack {
       entry: `${__dirname}/fns/apiAuthorizer.ts`,
       environment: {
         DatabaseTable: festivalsTable.tableName,
-        USER_POOL_ID: props.userPool ? props.userPool.userPoolId : 'UNKNOWN',
+        USER_POOL_ID: props.userPool ? props.userPool.userPoolId : "UNKNOWN",
+      },
+      logRetention: RetentionDays.ONE_WEEK,
+    });
+
+    // Save review to DDB and push it to SQS
+    const getFestivalsFn = new NodejsFunction(this, "GetFestivalsFn", {
+      architecture: Architecture.ARM_64,
+      entry: `${__dirname}/fns/getFestivals.ts`,
+      environment: {
+        DDB_TABLE: festivalsTable.tableName,
       },
       logRetention: RetentionDays.ONE_WEEK,
     });
@@ -175,13 +195,14 @@ export class EventDrivenServerlessStack extends Stack {
     );
 
     // PERMISSIONS
-    queue.grantSendMessages(writeFunction);
+    queue.grantSendMessages(saveReviewFn);
     queue.grantConsumeMessages(translateReviewsFn);
     imagesBucket.grantWrite(saveImageFn);
     imagesBucket.grantRead(resizeImageFunction);
     thumbnailImagesBucket.grantWrite(resizeImageFunction);
     festivalsTable.grantReadData(readAllFestivalsFn);
-    festivalsTable.grantWriteData(writeFunction);
+    festivalsTable.grantWriteData(saveReviewFn);
+    festivalsTable.grantReadData(getFestivalsFn);
 
     translateReviewsFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -199,7 +220,7 @@ export class EventDrivenServerlessStack extends Stack {
       })
     );
 
-    writeFunction.addToRolePolicy(
+    saveReviewFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -215,32 +236,46 @@ export class EventDrivenServerlessStack extends Stack {
       { prefix: "images/", suffix: ".png" }
     );
 
-    // API 
+    // API
 
     // Define API Authorizer
-    const apiAuthorizer = new HttpLambdaAuthorizer('apiAuthorizer', apiAuthorizerFn, {
-      authorizerName: `${context.appName}-http-api-authorizer-${context.environment}`,
-      responseTypes: [HttpLambdaResponseType.SIMPLE],
-    });
-    const api = new HttpApi(this, "FestivalsApi", {
+    const apiAuthorizer = new HttpLambdaAuthorizer(
+      "apiAuthorizer",
+      apiAuthorizerFn,
+      {
+        authorizerName: `${context.appName}-http-api-authorizer-${context.environment}`,
+        responseTypes: [HttpLambdaResponseType.SIMPLE],
+      }
+    );
+
+    const api = new HttpApi(this, "FestivalsAPI", {
       apiName: `${context.appName}-api-${context.environment}`,
       description: `HTTP API Demo - ${context.environment}`,
       corsPreflight: {
-        allowHeaders: ['Authorization', 'Content-Type'],
-        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST, CorsHttpMethod.OPTIONS],
-        allowOrigins: ['*'],
+        allowHeaders: ["Authorization", "Content-Type"],
+        allowMethods: [
+          CorsHttpMethod.GET,
+          CorsHttpMethod.POST,
+          CorsHttpMethod.OPTIONS,
+        ],
+        allowOrigins: ["*"],
       },
-      defaultAuthorizer: apiAuthorizer,
+      // defaultAuthorizer: apiAuthorizer,
     });
 
-    const readIntegration = new HttpLambdaIntegration(
-      "ReadIntegration",
+    const readAllFestivalsIntegration = new HttpLambdaIntegration(
+      "ReadAllFestivalsIntegration",
       readAllFestivalsFn
     );
 
-    const writeIntegration = new HttpLambdaIntegration(
-      "WriteIntegration",
-      writeFunction
+    const getFestivalsIntegration = new HttpLambdaIntegration(
+      "GetFestivalsIntegration",
+      getFestivalsFn
+    );
+
+    const saveReviewIntegration = new HttpLambdaIntegration(
+      "WriteReviewIntegration",
+      saveReviewFn
     );
 
     const saveImageIntegration = new HttpLambdaIntegration(
@@ -249,13 +284,18 @@ export class EventDrivenServerlessStack extends Stack {
     );
 
     api.addRoutes({
-      integration: readIntegration,
+      integration: readAllFestivalsIntegration,
       methods: [HttpMethod.GET],
       path: "/reviews",
     });
 
     api.addRoutes({
-      integration: writeIntegration,
+      integration: getFestivalsIntegration,
+      methods: [HttpMethod.GET],
+      path: "/festivals",
+    });
+    api.addRoutes({
+      integration: saveReviewIntegration,
       methods: [HttpMethod.POST],
       path: "/reviews",
     });
