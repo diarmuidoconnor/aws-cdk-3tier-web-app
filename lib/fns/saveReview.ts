@@ -1,80 +1,93 @@
-import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
-} from "aws-lambda";
+import { APIGatewayProxyResultV2, APIGatewayProxyHandlerV2 } from "aws-lambda";
+import { AddReviewBody, Review } from "../../shared/types";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+const moment = require("moment");
 
 const AWS = require("aws-sdk");
 
-const moment = require("moment");
+const ddbClient = new DynamoDBClient({ region: "eu-west-1" });
 
-const documentClient = new AWS.DynamoDB.DocumentClient();
-const sqs = new AWS.SQS({ apiVersion: "2012-11-05" });
-const comprehend = new AWS.Comprehend()
-
-export interface Festival {
-  artist: string;
-  city: string,
-  venue: string,
-  review: string;
-}
-
-export const handler = async (
-  event: APIGatewayProxyEventV2
-): Promise<APIGatewayProxyResultV2> => {
-  if (event.body) {
-    const festival = JSON.parse(event.body) as Festival;
-
-    let dbParams = {
-      TableName: process.env.DatabaseTable,
-      Item: {
-        ID: Math.floor(Math.random() * Math.floor(10000000)).toString(),
-        created: moment().format("YYYYMMDD-hhmmss"),
-        metadata: JSON.stringify(festival),
-        artist: festival.artist,
-        city: festival.city,
-        venue: festival.venue,
-        review: festival.review,
-      },
-    };
-    let comprehendParams = {
-      LanguageCode: null,
-      Text: festival.review
-    };
-    // console.log('sentimant params ', JSON.stringify(,null,3))
+export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
+  return new Promise<APIGatewayProxyResultV2>(async (resolve, reject) => {
     try {
+      console.log("Event: ", JSON.stringify(event));
+
+      // Fetch Body from event
+      const body: AddReviewBody = event.body ? JSON.parse(event.body) : {};
+
+      // Build Concert DDB Item
+      const review: Review = {
+        concertID: body.concertID,
+        language: body.language,
+        review: body.review,
+        author: body.author,
+        created: moment().format("YYYYMMDD-hhmmss"),
+      };
+
+      const marshallOptions = {
+        convertEmptyValues: true,
+        removeUndefinedValues: true,
+        convertClassInstanceToMap: true,
+      };
+      const unmarshallOptions = {
+        wrapNumbers: false,
+      };
+      const translateConfig = { marshallOptions, unmarshallOptions };
+      const ddbDocClient = DynamoDBDocumentClient.from(
+        ddbClient,
+        translateConfig
+      );
+      await ddbDocClient.send(
+        new PutCommand({
+          TableName: process.env.DDB_TABLE,
+          Item: review,
+        })
+      );
+
+      // let comprehendParams = {
+      //   LanguageCode: null,
+      //   Text: festival.review
+      // };
+      // console.log('sentimant params ', JSON.stringify(,null,3))
+      // try {
       // let dominantLanguage : any = await comprehend.detectDominantLanguage(comprehendParams).promise()
       // comprehendParams.LanguageCode = dominantLanguage.Languages[0].LanguageCode
-           
+
       // let sentiment = await comprehend.detectSentiment(comprehendParams).promise()
-      
+
       // console.log(' language ', JSON.stringify(sentiment, null,3) )
 
       // , function(err : any, data : any) {
       //   if (err) console.log(err, err.stack); // an error occurred
       //   else     console.log(data);           // successful response
       // });
-      let data = await documentClient.put(dbParams).promise();
-    } catch (err) {
-      console.log(err);
-      return {
-        statusCode: 400,
-        body: JSON.stringify(err),
-      };
+
+      // const queueParams = {
+      //   MessageBody: JSON.stringify(festival),
+      //   QueueUrl: process.env.SQSqueueURL
+      // }
+
+      // Send to SQS
+      // const result = await sqs.sendMessage(queueParams).promise()
+
+      // Return success message
+      return resolve({
+        statusCode: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: " Review added successfully" }),
+      });
+    } catch (error: any) {
+      console.log(JSON.stringify(error));
+      resolve({
+        statusCode: 500,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ error }),
+      });
     }
-    const queueParams = {
-      MessageBody: JSON.stringify(festival),
-      QueueUrl: process.env.SQSqueueURL
-    }
-    
-    // Send to SQS
-    // const result = await sqs.sendMessage(queueParams).promise()
-    return {
-      statusCode: 200,
-      body: "OK!",
-    };
-  }
-  return {
-    statusCode: 400,
-    body: "No body",
-  };
+  });
 };

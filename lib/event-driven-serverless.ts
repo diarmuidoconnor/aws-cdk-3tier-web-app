@@ -62,6 +62,15 @@ export class EventDrivenServerlessStack extends Stack {
       projectionType: ProjectionType.ALL,
     });
 
+    const reviewsTable = new Table(this, "ReviewsTable", {
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      partitionKey: { name: "concertID", type: AttributeType.STRING },
+      sortKey: { name: "language", type: AttributeType.STRING },
+      removalPolicy: RemovalPolicy.DESTROY,
+      tableName: "ReviewsTable",
+      stream: StreamViewType.NEW_IMAGE,
+    });  
+
     const queue = new sqs.Queue(this, "MySqsQueue");
 
     const imagesBucket = new s3.Bucket(this, "images", {
@@ -150,7 +159,7 @@ export class EventDrivenServerlessStack extends Stack {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/saveReview.ts`,
       environment: {
-        DatabaseTable: festivalsTable.tableName,
+        DDB_TABLE: reviewsTable.tableName,
         SQSqueueURL: queue.queueUrl,
       },
       logRetention: RetentionDays.ONE_WEEK,
@@ -210,7 +219,7 @@ export class EventDrivenServerlessStack extends Stack {
     imagesBucket.grantRead(resizeImageFunction);
     thumbnailImagesBucket.grantWrite(resizeImageFunction);
     festivalsTable.grantReadData(readAllFestivalsFn);
-    festivalsTable.grantWriteData(saveReviewFn);
+    reviewsTable.grantWriteData(saveReviewFn);
     festivalsTable.grantReadData(getFestivalsFn);
     festivalsTable.grantWriteData(addFestivalFn);
 
