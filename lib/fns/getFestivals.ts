@@ -31,7 +31,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         translateConfig
       );
 
-      // Query command input with attributes to get
+      // Setup Query command input with attributes to get from matching records
       const queryCommandInput: QueryCommandInput = {
         TableName: process.env.DDB_TABLE,
         // ExclusiveStartKey: params.nextToken
@@ -48,12 +48,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
 
       // Add Query Expression
       if (params.ID) {
+        // When querying on ID
         queryCommandInput.KeyConditionExpression = "ID = :ID";
         queryCommandInput.ExpressionAttributeValues = {
           ...queryCommandInput.ExpressionAttributeValues,
           ":ID": params.ID,
         };
       } else {
+        // When querying on artist 
         queryCommandInput.IndexName = "artist-index";
         queryCommandInput.KeyConditionExpression = "artist = :artist";
         queryCommandInput.ExpressionAttributeValues = {
