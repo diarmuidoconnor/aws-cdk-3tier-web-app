@@ -11,3 +11,10 @@ Cognito
 
 
  $ aws cognito-idp  initiate-auth --region eu-west-1 --auth-flow USER_PASSWORD_AUTH --client-id vlgrahdq8ji8a5f45oik504p --auth-parameters USERNAME=demouser,PASSWORD=1q2w3e4r%T
+
+--------------------
+Lambda
+    event source mapping - polling, batches - DynamoDB, SQS
+    asyncronous - event queue - S3 SNS 
+
+    when handler invoked async, and it performs an async task, then it must return a promise so that Lambda runtime receives the response/error from the function.
