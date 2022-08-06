@@ -1,3 +1,4 @@
+// REDUNDANT
 import type { APIGatewayProxyResultV2 } from "aws-lambda";
 import { QueryCommand, QueryCommandInput } from '@aws-sdk/lib-dynamodb';
 

@@ -9,6 +9,7 @@ const translate = new AWS.Translate();
 export const handler: DynamoDBStreamHandler = async (event) => {
   return new Promise<void>(async (resolve, reject) => {
     try {
+      console.log("event : ", JSON.stringify(event))
       // var params = {
       //     TableName : process.env.DatabaseTable,
       //     Key: {
@@ -19,7 +20,7 @@ export const handler: DynamoDBStreamHandler = async (event) => {
         if (record.eventName == "INSERT") {
           console.log(record)
           const review = record.dynamodb?.NewImage?.review.S;
-          if (review) {
+          if (review) { 
             console.log("Review :", review);
             const params = {
               SourceLanguageCode: "en" /* required */,

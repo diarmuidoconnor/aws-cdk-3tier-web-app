@@ -54,7 +54,7 @@ export class EventDrivenServerlessStack extends Stack {
       sortKey: { name: "created", type: AttributeType.STRING },
       tableName: "FestivalsTable",
       stream: StreamViewType.NEW_IMAGE,
-    }); 
+    });
     festivalsTable.addGlobalSecondaryIndex({
       indexName: `artist-index`,
       partitionKey: { name: "artist", type: AttributeType.STRING },
@@ -69,20 +69,28 @@ export class EventDrivenServerlessStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
       tableName: "ReviewsTable",
       stream: StreamViewType.NEW_IMAGE,
-    });  
+    });
 
-    const queue = new sqs.Queue(this, "MySqsQueue");
+    const translatedReviewsTable = new Table(this, "TranslatedReviewsTable", {
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      partitionKey: { name: "concertID", type: AttributeType.STRING },
+      sortKey: { name: "language", type: AttributeType.STRING },
+      removalPolicy: RemovalPolicy.DESTROY,
+      tableName: "TranslatedReviewsTable",
+    });
 
     const imagesBucket = new s3.Bucket(this, "images", {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
-      publicReadAccess: false
+      publicReadAccess: false,
     });
 
     const thumbnailImagesBucket = new s3.Bucket(this, "thumbnail-images", {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
+
+    const queue = new sqs.Queue(this, "MySqsQueue");
 
     const sharpLayer = new lambda.LayerVersion(this, "sharp-layer", {
       compatibleRuntimes: [
@@ -95,30 +103,33 @@ export class EventDrivenServerlessStack extends Stack {
 
     const newImageEventSource = new SqsEventSource(queue);
 
-    const readAllFestivalsFn = new NodejsFunction(this, "ReadNotesFn", {
-      architecture: Architecture.ARM_64,
-      // runtime: lambda.Runtime.NODEJS_12_X,
-      // handler: 'app.handler',
-      timeout: Duration.seconds(3),
-      memorySize: 128,
-      entry: `${__dirname}/fns/readAllFestivals.ts`,
-      environment: {
-        DatabaseTable: festivalsTable.tableName,
-      },
-      // role: lambdaRole,
-      logRetention: RetentionDays.ONE_WEEK,
-    });
+    // const readAllFestivalsFn = new NodejsFunction(this, "ReadNotesFn", {
+    //   architecture: Architecture.ARM_64,
+    //   // runtime: lambda.Runtime.NODEJS_12_X,
+    //   // handler: 'app.handler',
+    //   timeout: Duration.seconds(3),
+    //   memorySize: 128,
+    //   entry: `${__dirname}/fns/readAllFestivals.ts`,
+    //   environment: {
+    //     DatabaseTable: festivalsTable.tableName,
+    //   },
+    //   // role: lambdaRole,
+    //   logRetention: RetentionDays.ONE_WEEK,
+    // });
 
     // Translate review report retrieved from the SQS.
-    const translateReviewsFn = new NodejsFunction(this, "ReadQueueFn", {
-      architecture: Architecture.ARM_64,
-      // runtime: lambda.Runtime.NODEJS_12_X,
-      // handler: 'app.handler',
-      timeout: Duration.seconds(3),
-      memorySize: 128,
-      entry: `${__dirname}/fns/translateReviews.ts`,
-      logRetention: RetentionDays.ONE_WEEK,
-    });
+    // const translateReviewsFn = new NodejsFunction(this, "ReadQueueFn", {
+    //   architecture: Architecture.ARM_64,
+    //   // runtime: lambda.Runtime.NODEJS_12_X,
+    //   // handler: 'app.handler',
+    //   timeout: Duration.seconds(3),
+    //   memorySize: 128,
+    //   entry: `${__dirname}/fns/translateReviews.ts`,
+    //   environment: {
+    //     DDB_TABLE: translatedReviewsTable.tableName,
+    //   },
+    //   logRetention: RetentionDays.ONE_WEEK,
+    // });
 
     const saveImageFn = new NodejsFunction(this, "WriteImageFn", {
       architecture: Architecture.ARM_64,
@@ -156,7 +167,7 @@ export class EventDrivenServerlessStack extends Stack {
     });
 
     // Save review to DDB and push it to SQS
-    const saveReviewFn = new NodejsFunction(this, "WriteNoteFn", {
+    const saveReviewFn = new NodejsFunction(this, "SaveReviewFn", {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/saveReview.ts`,
       environment: {
@@ -167,16 +178,19 @@ export class EventDrivenServerlessStack extends Stack {
     });
 
     // Triggered when record added to DDB
-    const readDDBStreamFunction = new NodejsFunction(this, "ReadDDBStreamFn", {
-      architecture: Architecture.ARM_64,
-      entry: `${__dirname}/fns/readDDBStreamFunction.ts`,
-      environment: {
-        DatabaseTable: festivalsTable.tableName,
-      },
-      logRetention: RetentionDays.ONE_WEEK,
-    });
+    const translateReviewFunction = new NodejsFunction(
+      this,
+      "TranslateReviewFn",
+      {
+        architecture: Architecture.ARM_64,
+        entry: `${__dirname}/fns/translateReview.ts`,
+        environment: {
+          DDB_TABLE: translatedReviewsTable.tableName,
+        },
+        logRetention: RetentionDays.ONE_WEEK,
+      }
+    );
 
-    // Triggered when record added to DDB
     const apiAuthorizerFn = new NodejsFunction(this, "APIAuthorizerFn", {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/apiAuthorizer.ts`,
@@ -204,18 +218,11 @@ export class EventDrivenServerlessStack extends Stack {
         DDB_TABLE: festivalsTable.tableName,
       },
       logRetention: RetentionDays.ONE_WEEK,
-    });    
-
-    translateReviewsFn.addEventSource(newImageEventSource);
-    readDDBStreamFunction.addEventSource(
-      new DynamoEventSource(reviewsTable, {
-        startingPosition: StartingPosition.LATEST,
-      })
-    );
+    });
 
     // PERMISSIONS
     queue.grantSendMessages(saveReviewFn);
-    queue.grantConsumeMessages(translateReviewsFn);
+    // queue.grantConsumeMessages(translateReviewsFn);
     imagesBucket.grantWrite(saveImageFn);
     imagesBucket.grantRead(resizeImageFunction);
     thumbnailImagesBucket.grantWrite(resizeImageFunction);
@@ -223,8 +230,9 @@ export class EventDrivenServerlessStack extends Stack {
     reviewsTable.grantWriteData(saveReviewFn);
     festivalsTable.grantReadData(getFestivalsFn);
     festivalsTable.grantWriteData(addFestivalFn);
+    translatedReviewsTable.grantReadWriteData(translateReviewFunction);
 
-    translateReviewsFn.addToRolePolicy(
+    translateReviewFunction.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -232,13 +240,13 @@ export class EventDrivenServerlessStack extends Stack {
       })
     );
 
-    readDDBStreamFunction.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        resources: ["*"],
-        actions: ["translate:TranslateText"],
-      })
-    );
+    // readDDBStreamFunction.addToRolePolicy(
+    //   new iam.PolicyStatement({
+    //     effect: iam.Effect.ALLOW,
+    //     resources: ["*"],
+    //     actions: ["translate:TranslateText"],
+    //   })
+    // );
 
     saveReviewFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -249,18 +257,23 @@ export class EventDrivenServerlessStack extends Stack {
     );
 
     // EVENTS
-    imagesBucket.addEventNotification(
-      s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(resizeImageFunction),
-      // 👇 only invoke lambda if object matches the filter
-      { prefix: "images/" , suffix: ".png" }, 
+    // translateReviewsFn.addEventSource(newImageEventSource);
+    translateReviewFunction.addEventSource(
+      new DynamoEventSource(reviewsTable, {
+        startingPosition: StartingPosition.LATEST,
+      })
     );
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(resizeImageFunction),
       // 👇 only invoke lambda if object matches the filter
-      { prefix: "images/" , suffix: ".jpeg" }, 
-
+      { prefix: "images/", suffix: ".png" }
+    );
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(resizeImageFunction),
+      // 👇 only invoke lambda if object matches the filter
+      { prefix: "images/", suffix: ".jpeg" }
     );
     // API
 
@@ -302,7 +315,7 @@ export class EventDrivenServerlessStack extends Stack {
     const addFestivalIntegration = new HttpLambdaIntegration(
       "AddFestivalIntegration",
       addFestivalFn
-    );    
+    );
 
     const saveReviewIntegration = new HttpLambdaIntegration(
       "WriteReviewIntegration",
@@ -330,8 +343,8 @@ export class EventDrivenServerlessStack extends Stack {
       integration: addFestivalIntegration,
       methods: [HttpMethod.POST],
       path: "/festivals",
-    });    
-    
+    });
+
     api.addRoutes({
       integration: saveReviewIntegration,
       methods: [HttpMethod.POST],
