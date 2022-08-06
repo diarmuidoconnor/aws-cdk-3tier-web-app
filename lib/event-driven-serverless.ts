@@ -76,6 +76,7 @@ export class EventDrivenServerlessStack extends Stack {
     const imagesBucket = new s3.Bucket(this, "images", {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      publicReadAccess: false
     });
 
     const thumbnailImagesBucket = new s3.Bucket(this, "thumbnail-images", {
@@ -139,7 +140,7 @@ export class EventDrivenServerlessStack extends Stack {
       // handler: 'app.handler',
       timeout: Duration.seconds(5),
       memorySize: 128,
-      entry: `${__dirname}/fns/imageResizeFunction.ts`,
+      entry: `${__dirname}/fns/resizeImage.ts`,
       environment: {
         bucketName: thumbnailImagesBucket.bucketName,
       },
@@ -207,7 +208,7 @@ export class EventDrivenServerlessStack extends Stack {
 
     translateReviewsFn.addEventSource(newImageEventSource);
     readDDBStreamFunction.addEventSource(
-      new DynamoEventSource(festivalsTable, {
+      new DynamoEventSource(reviewsTable, {
         startingPosition: StartingPosition.LATEST,
       })
     );
@@ -252,9 +253,15 @@ export class EventDrivenServerlessStack extends Stack {
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(resizeImageFunction),
       // 👇 only invoke lambda if object matches the filter
-      { prefix: "images/", suffix: ".png" }
+      { prefix: "images/" , suffix: ".png" }, 
     );
+    imagesBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(resizeImageFunction),
+      // 👇 only invoke lambda if object matches the filter
+      { prefix: "images/" , suffix: ".jpeg" }, 
 
+    );
     // API
 
     // Define API Authorizer

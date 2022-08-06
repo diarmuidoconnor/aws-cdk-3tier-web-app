@@ -1,3 +1,4 @@
+// REDUNDANT
 /* eslint-disable import/extensions, import/no-absolute-path */
 import { sharp } from "/opt/nodejs/sharp-utils";
 const AWS = require("aws-sdk");
