@@ -21,12 +21,13 @@ import type {
     
         try {
             const parsedBody = JSON.parse(event.body);
+            const imageType = parsedBody["image"]["mime"].split("/")[1]
             const base64File = parsedBody["image"]["data"];
             const decodedFile = Buffer.from(base64File.replace(/^data:image\/\w+;base64,/, ""), "base64");
             const params = {
                 Bucket: process.env.bucketName,
                 // Key: `images/${new Date().toISOString()}.jpeg`,
-                Key: `images/${parsedBody.image.name }.png`,
+                Key: `images/${parsedBody.image.name }.${imageType}`,
                 Body: decodedFile,
                 ContentType: "image/png",
             };
