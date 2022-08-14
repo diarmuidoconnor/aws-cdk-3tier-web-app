@@ -31,6 +31,7 @@
     "@aws-sdk/lib-dynamodb": "^3.79.0",
     "aws-cdk-lib": "2.20.0",
     "axios": "^0.27.2",
+    "cdk-dia": "^0.7.0",
     "constructs": "^10.0.0",
     "dynamodb-onetable": "^2.3.4",
     "git-branch": "^2.0.1",
