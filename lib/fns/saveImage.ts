@@ -25,7 +25,7 @@ import type {
             const base64File = parsedBody["image"]["data"];
             const decodedFile = Buffer.from(base64File.replace(/^data:image\/\w+;base64,/, ""), "base64");
             const params = {
-                Bucket: process.env.bucketName,
+                Bucket: process.env.BUCKET_NAME,
                 // Key: `images/${new Date().toISOString()}.jpeg`,
                 Key: `images/${parsedBody.image.name }.${imageType}`,
                 Body: decodedFile,

@@ -11,8 +11,7 @@ const ddbClient = new DynamoDBClient({ region: "eu-west-1" });
 export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   return new Promise<APIGatewayProxyResultV2>(async (resolve, reject) => {
     try {
-      console.log("Event: ", JSON.stringify(event));
-
+      console.log("Event is : ", JSON.stringify(event));
       // Fetch Body from event
       const body: AddReviewBody = event.body ? JSON.parse(event.body) : {};
 

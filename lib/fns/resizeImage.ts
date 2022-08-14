@@ -46,7 +46,7 @@ export const handler = async (event: S3Event): Promise<S3EventResponse> => {
     // Upload the thumbnail image to the destination bucket
     try {
       const destparams = {
-        Bucket: process.env.bucketName,
+        Bucket: process.env.BUCKET_NAME,
         Key: srcKey,
         Body: buffer,
         ContentType: "image",

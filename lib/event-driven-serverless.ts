@@ -139,13 +139,13 @@ export class EventDrivenServerlessStack extends Stack {
       memorySize: 128,
       entry: `${__dirname}/fns/saveImage.ts`,
       environment: {
-        bucketName: imagesBucket.bucketName,
+        BUCKET_NAME: imagesBucket.bucketName,
       },
       // role: lambdaRole,
       logRetention: RetentionDays.ONE_WEEK,
     });
 
-    const resizeImageFunction = new NodejsFunction(this, "ResizeImageFn", {
+    const resizeImageFn = new NodejsFunction(this, "ResizeImageFn", {
       // architecture: Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_14_X,
       // handler: 'app.handler',
@@ -153,14 +153,13 @@ export class EventDrivenServerlessStack extends Stack {
       memorySize: 128,
       entry: `${__dirname}/fns/resizeImage.ts`,
       environment: {
-        bucketName: thumbnailImagesBucket.bucketName,
+        BUCKET_NAME: thumbnailImagesBucket.bucketName,
       },
       // role: lambdaRole,
       logRetention: RetentionDays.ONE_WEEK,
       bundling: {
         minify: false,
-        // 👇 don't bundle `yup` layer
-        // layers are already available in the lambda env
+        // layers that are already available in the lambda env
         externalModules: ["aws-sdk", "sharp"],
       },
       layers: [sharpLayer],
@@ -178,7 +177,7 @@ export class EventDrivenServerlessStack extends Stack {
     });
 
     // Triggered when record added to DDB
-    const translateReviewFunction = new NodejsFunction(
+    const translateReviewFn = new NodejsFunction(
       this,
       "TranslateReviewFn",
       {
@@ -195,7 +194,6 @@ export class EventDrivenServerlessStack extends Stack {
       architecture: Architecture.ARM_64,
       entry: `${__dirname}/fns/apiAuthorizer.ts`,
       environment: {
-        DatabaseTable: festivalsTable.tableName,
         USER_POOL_ID: props.userPool ? props.userPool.userPoolId : "UNKNOWN",
       },
       logRetention: RetentionDays.ONE_WEEK,
@@ -224,15 +222,15 @@ export class EventDrivenServerlessStack extends Stack {
     queue.grantSendMessages(saveReviewFn);
     // queue.grantConsumeMessages(translateReviewsFn);
     imagesBucket.grantWrite(saveImageFn);
-    imagesBucket.grantRead(resizeImageFunction);
-    thumbnailImagesBucket.grantWrite(resizeImageFunction);
-    festivalsTable.grantReadData(readAllFestivalsFn);
+    imagesBucket.grantRead(resizeImageFn);
+    thumbnailImagesBucket.grantWrite(resizeImageFn);
+    // festivalsTable.grantReadData(readAllFestivalsFn);
     reviewsTable.grantWriteData(saveReviewFn);
     festivalsTable.grantReadData(getFestivalsFn);
     festivalsTable.grantWriteData(addFestivalFn);
-    translatedReviewsTable.grantReadWriteData(translateReviewFunction);
+    translatedReviewsTable.grantReadWriteData(translateReviewFn);
 
-    translateReviewFunction.addToRolePolicy(
+    translateReviewFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -258,20 +256,20 @@ export class EventDrivenServerlessStack extends Stack {
 
     // EVENTS
     // translateReviewsFn.addEventSource(newImageEventSource);
-    translateReviewFunction.addEventSource(
+    translateReviewFn.addEventSource(
       new DynamoEventSource(reviewsTable, {
         startingPosition: StartingPosition.LATEST,
       })
     );
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(resizeImageFunction),
+      new s3n.LambdaDestination(resizeImageFn),
       // 👇 only invoke lambda if object matches the filter
       { prefix: "images/", suffix: ".png" }
     );
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(resizeImageFunction),
+      new s3n.LambdaDestination(resizeImageFn),
       // 👇 only invoke lambda if object matches the filter
       { prefix: "images/", suffix: ".jpeg" }
     );
@@ -299,13 +297,13 @@ export class EventDrivenServerlessStack extends Stack {
         ],
         allowOrigins: ["*"],
       },
-      // defaultAuthorizer: apiAuthorizer,
+      defaultAuthorizer: apiAuthorizer,
     });
 
-    const readAllFestivalsIntegration = new HttpLambdaIntegration(
-      "ReadAllFestivalsIntegration",
-      readAllFestivalsFn
-    );
+    // const readAllFestivalsIntegration = new HttpLambdaIntegration(
+    //   "ReadAllFestivalsIntegration",
+    //   readAllFestivalsFn
+    // );
 
     const getFestivalsIntegration = new HttpLambdaIntegration(
       "GetFestivalsIntegration",
@@ -327,16 +325,17 @@ export class EventDrivenServerlessStack extends Stack {
       saveImageFn
     );
 
-    api.addRoutes({
-      integration: readAllFestivalsIntegration,
-      methods: [HttpMethod.GET],
-      path: "/reviews",
-    });
+    // api.addRoutes({
+    //   integration: readAllFestivalsIntegration,
+    //   methods: [HttpMethod.GET],
+    //   path: "/reviews",
+    // });
 
     api.addRoutes({
       integration: getFestivalsIntegration,
       methods: [HttpMethod.GET],
       path: "/festivals",
+      // authorizer: apiAuthorizer
     });
 
     api.addRoutes({
