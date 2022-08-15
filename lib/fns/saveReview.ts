@@ -17,11 +17,12 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
 
       // Build Concert DDB Item
       const review: Review = {
+        ID: Math.floor(Math.random() * Math.floor(10000000)).toString(),
+        created: moment().format("YYYYMMDD-hhmmss"),  
         concertID: body.concertID,
         language: body.language,
         review: body.review,
         author: body.author,
-        created: moment().format("YYYYMMDD-hhmmss"),
       };
 
       const marshallOptions = {
@@ -43,25 +44,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
           Item: review,
         })
       );
-
-      // let comprehendParams = {
-      //   LanguageCode: null,
-      //   Text: festival.review
-      // };
-      // console.log('sentimant params ', JSON.stringify(,null,3))
-      // try {
-      // let dominantLanguage : any = await comprehend.detectDominantLanguage(comprehendParams).promise()
-      // comprehendParams.LanguageCode = dominantLanguage.Languages[0].LanguageCode
-
-      // let sentiment = await comprehend.detectSentiment(comprehendParams).promise()
-
-      // console.log(' language ', JSON.stringify(sentiment, null,3) )
-
-      // , function(err : any, data : any) {
-      //   if (err) console.log(err, err.stack); // an error occurred
-      //   else     console.log(data);           // successful response
-      // });
-
+ 
       // const queueParams = {
       //   MessageBody: JSON.stringify(festival),
       //   QueueUrl: process.env.SQSqueueURL
@@ -70,7 +53,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       // Send to SQS
       // const result = await sqs.sendMessage(queueParams).promise()
 
-      // Return success message
       return resolve({
         statusCode: 200,
         headers: {
