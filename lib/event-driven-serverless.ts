@@ -33,6 +33,9 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3n from "aws-cdk-lib/aws-s3-notifications";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
+
 import {
   HttpLambdaAuthorizer,
   HttpLambdaResponseType,
@@ -64,8 +67,8 @@ export class EventDrivenServerlessStack extends Stack {
 
     const reviewsTable = new Table(this, "ReviewsTable", {
       billingMode: BillingMode.PAY_PER_REQUEST,
-      partitionKey: { name: "concertID", type: AttributeType.STRING },
-      sortKey: { name: "language", type: AttributeType.STRING },
+      partitionKey: { name: "ID", type: AttributeType.STRING },
+      sortKey: { name: "created", type: AttributeType.STRING },
       removalPolicy: RemovalPolicy.DESTROY,
       tableName: "ReviewsTable",
       stream: StreamViewType.NEW_IMAGE,
@@ -90,7 +93,12 @@ export class EventDrivenServerlessStack extends Stack {
       autoDeleteObjects: true,
     });
 
+    const newReviewTopic = new sns.Topic(this, 'NewReviewTopic', {
+      displayName: 'New Reviews topic',
+    });
+
     const queue = new sqs.Queue(this, "MySqsQueue");
+    const comprehendQueue = new sqs.Queue(this, "Comprehend Queue");
 
     const sharpLayer = new lambda.LayerVersion(this, "sharp-layer", {
       compatibleRuntimes: [
@@ -102,6 +110,7 @@ export class EventDrivenServerlessStack extends Stack {
     });
 
     const newImageEventSource = new SqsEventSource(queue);
+    const newReviewEventSource = new SqsEventSource(comprehendQueue);
 
     // const readAllFestivalsFn = new NodejsFunction(this, "ReadNotesFn", {
     //   architecture: Architecture.ARM_64,
@@ -218,9 +227,38 @@ export class EventDrivenServerlessStack extends Stack {
       logRetention: RetentionDays.ONE_WEEK,
     });
 
+    const publishReviewFn = new NodejsFunction(this, "PublishReviewFn", {
+      architecture: Architecture.ARM_64,
+      timeout: Duration.seconds(3),
+      memorySize: 128,
+      entry: `${__dirname}/fns/publishReviewToSNS.ts`,
+      environment: {
+        SNS_ARN: newReviewTopic.topicArn,
+      },
+      logRetention: RetentionDays.ONE_WEEK,
+    });
+
+    const transcribeReviewFn = new NodejsFunction(this, "TranscribewFn", {
+      architecture: Architecture.ARM_64,
+      timeout: Duration.seconds(3),
+      memorySize: 128,
+      entry: `${__dirname}/fns/translateReview.ts`,
+      environment: {
+        SNS_ARN: newReviewTopic.topicArn,
+      },
+      logRetention: RetentionDays.ONE_WEEK,
+    });
+
+    const comprehendReviewFn = new NodejsFunction(this, "ComprehendFn", {
+      architecture: Architecture.ARM_64,
+      timeout: Duration.seconds(3),
+      memorySize: 128,
+      entry: `${__dirname}/fns/comprehendReview.ts`,
+      logRetention: RetentionDays.ONE_WEEK,
+    });
     // PERMISSIONS
     queue.grantSendMessages(saveReviewFn);
-    // queue.grantConsumeMessages(translateReviewsFn);
+    comprehendQueue.grantConsumeMessages(comprehendReviewFn);
     imagesBucket.grantWrite(saveImageFn);
     imagesBucket.grantRead(resizeImageFn);
     thumbnailImagesBucket.grantWrite(resizeImageFn);
@@ -229,8 +267,9 @@ export class EventDrivenServerlessStack extends Stack {
     festivalsTable.grantReadData(getFestivalsFn);
     festivalsTable.grantWriteData(addFestivalFn);
     translatedReviewsTable.grantReadWriteData(translateReviewFn);
+    newReviewTopic.grantPublish(publishReviewFn)
 
-    translateReviewFn.addToRolePolicy(
+    transcribeReviewFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -246,7 +285,7 @@ export class EventDrivenServerlessStack extends Stack {
     //   })
     // );
 
-    saveReviewFn.addToRolePolicy(
+    comprehendReviewFn.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         resources: ["*"],
@@ -256,11 +295,13 @@ export class EventDrivenServerlessStack extends Stack {
 
     // EVENTS
     // translateReviewsFn.addEventSource(newImageEventSource);
-    translateReviewFn.addEventSource(
+        comprehendReviewFn.addEventSource(newReviewEventSource);
+    publishReviewFn.addEventSource(
       new DynamoEventSource(reviewsTable, {
         startingPosition: StartingPosition.LATEST,
       })
     );
+    
     imagesBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(resizeImageFn),
@@ -273,6 +314,11 @@ export class EventDrivenServerlessStack extends Stack {
       // 👇 only invoke lambda if object matches the filter
       { prefix: "images/", suffix: ".jpeg" }
     );
+
+    newReviewTopic.addSubscription(new subs.LambdaSubscription(transcribeReviewFn));
+    newReviewTopic.addSubscription(new subs.SqsSubscription(comprehendQueue));
+
+
     // API
 
     // Define API Authorizer
@@ -357,6 +403,12 @@ export class EventDrivenServerlessStack extends Stack {
     });
 
     // OUTPUTS
+
+    new CfnOutput(this, 'snsTopicArn', {
+      value: newReviewTopic.topicArn,
+      description: 'The arn of the SNS topic',
+    })
+  
     new CfnOutput(this, "HttpApiUrl", { value: api.apiEndpoint });
   }
   // const lambdaRole = new aws_iam.Role(this, 'QueueConsumerFunctionRole', {

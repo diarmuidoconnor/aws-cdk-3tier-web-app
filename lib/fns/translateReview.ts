@@ -1,31 +1,22 @@
-import { RecordSet } from "aws-cdk-lib/aws-route53";
-import type { DynamoDBStreamHandler } from "aws-lambda";
+import { APIGatewayProxyResultV2, SNSHandler, SNSEvent } from "aws-lambda";
 
 const AWS = require("aws-sdk");
-
-const documentClient = new AWS.DynamoDB.DocumentClient();
 const translate = new AWS.Translate();
 
-export const handler: DynamoDBStreamHandler = async (event) => {
-  return new Promise<void>(async (resolve, reject) => {
+export const handler  = async (
+  event: SNSEvent
+): Promise<APIGatewayProxyResultV2> => {
+  return new Promise<APIGatewayProxyResultV2>(async (resolve, reject) => {
     try {
-      console.log("event : ", JSON.stringify(event))
-      // var params = {
-      //     TableName : process.env.DatabaseTable,
-      //     Key: {
-      //       HashKey: 'hashkey'
-      //     }
-      //   };
+      console.log("Event: 👉", JSON.stringify(event, null, 2));
       for (const record of event.Records) {
-        if (record.eventName == "INSERT") {
-          console.log(record)
-          const review = record.dynamodb?.NewImage?.review.S;
-          if (review) { 
-            console.log("Review :", review);
+        const { Message } = record.Sns;
+        const reviewRecord = JSON.parse(Message) 
+        if (reviewRecord.review ) {
             const params = {
-              SourceLanguageCode: "en" /* required */,
+              SourceLanguageCode: reviewRecord.language /* required */,
               TargetLanguageCode: "fr" /* required */,
-              Text: review,
+              Text: reviewRecord.review,
             };
             const translatedMessage = await translate
               .translateText(params)
@@ -33,11 +24,17 @@ export const handler: DynamoDBStreamHandler = async (event) => {
             console.log("Translation is " + JSON.stringify(translatedMessage));
           }
         }
-      }
-      resolve()
+        return resolve({
+          body:  "Translations successful" ,
+          statusCode: 200,
+        });
+      
     } catch (error) {
       console.log(JSON.stringify(error));
-      reject();
+      return reject({
+        body: JSON.stringify({ error }),
+        statusCode: 500,
+      });
     }
   });
 };
