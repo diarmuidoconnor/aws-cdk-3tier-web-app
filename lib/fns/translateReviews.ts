@@ -1,3 +1,4 @@
+// REDUNDANT
 import { SQSHandler } from "aws-lambda";
 import {Festival } from './saveReview';
 const AWS = require("aws-sdk");
